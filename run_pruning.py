@@ -30,13 +30,17 @@ optimize_last_layer = True
 # pruning parameters
 k = 6
 prune_threshold = 3
-
+# 找出每个P对应的最近的6个image patches，如果这6个image patches中小于三个是来自于P所属的类的，那就认为这个P是表征了背景特征。要删去
+# 这里的image patch是未augmented 的训练图，因此做prune是在原图train image上做的
+# 模型存储地址和模型名字参照作者注释，这里的模型是已经训练完毕了的，且一定是要刚push完，因为它会用到P的可视，P所对应的那个最近patch的原图
+# 等信息（通过epoch和original_model_dir来加载），因此只有push的epoch才能找出相对应的图像文件夹
 original_model_dir = args.modeldir[0] #'./saved_models/densenet161/003/'
 original_model_name = args.model[0] #'10_16push0.8007.pth'
 
 need_push = ('nopush' in original_model_name)
 if need_push:
     assert(False) # pruning must happen after push
+    # 如果model name中是nopush，即joint训练后产生的模型，就报错
 else:
     epoch = original_model_name.split('push')[0]
 
@@ -44,16 +48,16 @@ if '_' in epoch:
     epoch = int(epoch.split('_')[0])
 else:
     epoch = int(epoch)
-
+# 找出是第几个epoch产生的model
 model_dir = os.path.join(original_model_dir, 'pruned_prototypes_epoch{}_k{}_pt{}'.format(epoch,
                                           k,
-                                          prune_threshold))
+                                          prune_threshold)) # 存放prune后的model以及prune又微调后的model
 makedir(model_dir)
-shutil.copy(src=os.path.join(os.getcwd(), __file__), dst=model_dir)
+shutil.copy(src=os.path.join(os.getcwd(), __file__), dst=model_dir) # 将当前 Python 脚本文件复制到指定目录，并开始记录log
 
 log, logclose = create_logger(log_filename=os.path.join(model_dir, 'prune.log'))
 
-ppnet = torch.load(original_model_dir + original_model_name)
+ppnet = torch.load(original_model_dir + original_model_name) # model加载
 ppnet = ppnet.cuda()
 ppnet_multi = torch.nn.DataParallel(ppnet)
 class_specific = True
@@ -78,9 +82,8 @@ train_dataset = datasets.ImageFolder(
         normalize,
     ]))
 train_loader = torch.utils.data.DataLoader(
-    train_dataset, batch_size=train_batch_size, shuffle=True,
-    num_workers=4, pin_memory=False)
-
+    train_dataset, batch_size=train_batch_size, shuffle=True)
+# Jiabang's change,删去了num_workers=4, pin_memory=False
 # test set
 test_dataset = datasets.ImageFolder(
     test_dir,
@@ -90,9 +93,8 @@ test_dataset = datasets.ImageFolder(
         normalize,
     ]))
 test_loader = torch.utils.data.DataLoader(
-    test_dataset, batch_size=test_batch_size, shuffle=False,
-    num_workers=4, pin_memory=False)
-
+    test_dataset, batch_size=test_batch_size, shuffle=False)
+# Jiabang's change,删去了num_workers=4, pin_memory=False
 log('training set size: {0}'.format(len(train_loader.dataset)))
 log('test set size: {0}'.format(len(test_loader.dataset)))
 log('batch size: {0}'.format(train_batch_size))
@@ -105,13 +107,12 @@ train_push_dataset = datasets.ImageFolder(
         transforms.ToTensor(),
     ]))
 train_push_loader = torch.utils.data.DataLoader(
-    train_push_dataset, batch_size=train_push_batch_size, shuffle=False,
-    num_workers=4, pin_memory=False)
-    
+    train_push_dataset, batch_size=train_push_batch_size, shuffle=False) # 这是不做normalization的
+# Jiabang's change,删去了num_workers=4, pin_memory=False
 log('push set size: {0}'.format(len(train_push_loader.dataset)))
 
 tnt.test(model=ppnet_multi, dataloader=test_loader,
-         class_specific=class_specific, log=log)
+         class_specific=class_specific, log=log) # 先用不做prune的做一遍test，看下精度
 
 # prune prototypes
 log('prune')
@@ -126,14 +127,14 @@ prune.prune_prototypes(dataloader=train_push_loader,
                        log=log,
                        copy_prototype_imgs=True)
 accu = tnt.test(model=ppnet_multi, dataloader=test_loader,
-                class_specific=class_specific, log=log)
+                class_specific=class_specific, log=log) # 用做过prune的做一遍test，看下精度
 save.save_model_w_condition(model=ppnet, model_dir=model_dir,
                             model_name=original_model_name.split('push')[0] + 'prune',
                             accu=accu,
-                            target_accu=0.70, log=log)
+                            target_accu=0.70, log=log) # 存放prune后的model
 
 # last layer optimization
-if optimize_last_layer:
+if optimize_last_layer: # prune后可以对FC层做一个微调
     last_layer_optimizer_specs = [{'params': ppnet.last_layer.parameters(), 'lr': 1e-4}]
     last_layer_optimizer = torch.optim.Adam(last_layer_optimizer_specs)
 
@@ -145,16 +146,16 @@ if optimize_last_layer:
     }
 
     log('optimize last layer')
-    tnt.last_only(model=ppnet_multi, log=log)
+    tnt.last_only(model=ppnet_multi, log=log) # 只学习最后一层的权重，其他的冻结
     for i in range(100):
         log('iteration: \t{0}'.format(i))
         _ = tnt.train(model=ppnet_multi, dataloader=train_loader, optimizer=last_layer_optimizer,
                       class_specific=class_specific, coefs=coefs, log=log)
         accu = tnt.test(model=ppnet_multi, dataloader=test_loader,
-                        class_specific=class_specific, log=log)
+                        class_specific=class_specific, log=log) # 看下prune后又做了微调后的精度
         save.save_model_w_condition(model=ppnet, model_dir=model_dir,
                                     model_name=original_model_name.split('push')[0] + '_' + str(i) + 'prune',
                                     accu=accu,
-                                    target_accu=0.70, log=log)
+                                    target_accu=0.70, log=log) # 把微调后的模型保存，微调会做100次
 
 logclose()

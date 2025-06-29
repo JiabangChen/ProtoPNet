@@ -66,10 +66,10 @@ def find_k_nearest_patches_to_prototypes(dataloader, # pytorch dataloader (must 
     '''
     log('find nearest patches')
     start = time.time()
-    n_prototypes = prototype_network_parallel.module.num_prototypes
+    n_prototypes = prototype_network_parallel.module.num_prototypes # P的数量
     
-    prototype_shape = prototype_network_parallel.module.prototype_shape
-    max_dist = prototype_shape[1] * prototype_shape[2] * prototype_shape[3]
+    prototype_shape = prototype_network_parallel.module.prototype_shape # P的形状
+    max_dist = prototype_shape[1] * prototype_shape[2] * prototype_shape[3] # P和patch的最大距离依旧是512
 
     protoL_rf_info = prototype_network_parallel.module.proto_layer_rf_info
 
@@ -77,7 +77,7 @@ def find_k_nearest_patches_to_prototypes(dataloader, # pytorch dataloader (must 
     # allocate an array of n_prototypes number of heaps
     for _ in range(n_prototypes):
         # a heap in python is just a maintained list
-        heaps.append([])
+        heaps.append([]) # heaps中共有2000个列表
 
     for idx, (search_batch_input, search_y) in enumerate(dataloader):
         print('batch {}'.format(idx))
@@ -85,7 +85,7 @@ def find_k_nearest_patches_to_prototypes(dataloader, # pytorch dataloader (must 
             # print('preprocessing input for pushing ...')
             # search_batch = copy.deepcopy(search_batch_input)
             search_batch = preprocess_input_function(search_batch_input)
-
+            # train_push_loader里面是是train原图，没有augmentation，也没有normalization，这里先初始化
         else:
             search_batch = search_batch_input
 
@@ -93,16 +93,17 @@ def find_k_nearest_patches_to_prototypes(dataloader, # pytorch dataloader (must 
             search_batch = search_batch.cuda()
             protoL_input_torch, proto_dist_torch = \
                 prototype_network_parallel.module.push_forward(search_batch)
-
+            # 当输入的是一个batch时，计算每一个sample经过backbone和add_on_layer后的feature map （B, 512, H, W）
+            # 这个map中的每一个pixel对每个P的距离 (B, 2000, H, W)
         #protoL_input_ = np.copy(protoL_input_torch.detach().cpu().numpy())
         proto_dist_ = np.copy(proto_dist_torch.detach().cpu().numpy())
 
-        for img_idx, distance_map in enumerate(proto_dist_):
-            for j in range(n_prototypes):
+        for img_idx, distance_map in enumerate(proto_dist_): # for是对这个batch中的每一个sample开始做循环
+            for j in range(n_prototypes): # 第二个for是对与这个sample做比较的2000个P做循坏
                 # find the closest patches in this batch to prototype j
 
                 closest_patch_distance_to_prototype_j = np.amin(distance_map[j])
-
+                # 在这个sample的feature map中，找到与Pj最近的patch的距离
                 if full_save:
                     closest_patch_indices_in_distance_map_j = \
                         list(np.unravel_index(np.argmin(distance_map[j],axis=None),
@@ -146,19 +147,24 @@ def find_k_nearest_patches_to_prototypes(dataloader, # pytorch dataloader (must 
 
                 # add to the j-th heap
                 if len(heaps[j]) < k:
-                    heapq.heappush(heaps[j], closest_patch)
+                    heapq.heappush(heaps[j], closest_patch) # heapq.heappush的功能是让args,在这里是heaps[j]，这个披着
+                    # 列表外衣的堆的第一个数永远是最小的数，但注意并不是排序，而是永远保持堆顶是最小的数，这里传入堆的不是int，而是一个对象，
+                    # 那么要实现堆的功能这个对象就要有支持比较的函数__lt__
                 else:
                     # heappushpop runs more efficiently than heappush
                     # followed by heappop
-                    heapq.heappushpop(heaps[j], closest_patch)
+                    heapq.heappushpop(heaps[j], closest_patch) # heapq.heappushpop在这里的功能是把closest_patch加入到
+                    # heaps[j]这个披着list的外衣的heap中，然后弹出最小值，由于__lt__函数的意思是负distance越小越好，那么也就是说这里最
+                    # 小的负distance会被弹出，也就是最大的distance会被弹出
+    # 这个heap最后的功能实现是对每个P找出了k个最小的距离
 
     # after looping through the dataset every heap will
     # have the k closest prototypes
     for j in range(n_prototypes):
         # finally sort the heap; the heap only contains the k closest
         # but they are not ranked yet
-        heaps[j].sort()
-        heaps[j] = heaps[j][::-1]
+        heaps[j].sort() # 将每个P的最小distance堆中的distance排序
+        heaps[j] = heaps[j][::-1] # 从大到小排列
 
         if full_save:
 
@@ -244,7 +250,7 @@ def find_k_nearest_patches_to_prototypes(dataloader, # pytorch dataloader (must 
 
 
     labels_all_prototype = np.array([[patch.label for patch in heaps[j]] for j in range(n_prototypes)])
-
+    # 把2000个P各自的堆中，那些与P距离最小的patch所属的train image的label提取出来，形状是[[],[],[]...]
     if full_save:
         np.save(os.path.join(root_dir_for_saving_images, 'full_class_id.npy'),
                 labels_all_prototype)

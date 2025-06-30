@@ -304,7 +304,7 @@ class PPNet(nn.Module):
 
 
 def construct_PPNet(base_architecture, pretrained=True, img_size=224,
-                    prototype_shape=(2000, 512, 1, 1), num_classes=200,
+                    prototype_shape=(2000, 512, 1, 1), num_classes=200, # 其实是128维的 详见settings
                     prototype_activation_function='log',
                     add_on_layers_type='bottleneck'):
     features = base_architecture_to_features[base_architecture](pretrained=pretrained) # 建立了一个backbone，并且把classifer

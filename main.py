@@ -136,7 +136,9 @@ warm_optimizer_specs = \
  {'params': ppnet.prototype_vectors, 'lr': warm_optimizer_lrs['prototype_vectors']},
 ]
 warm_optimizer = torch.optim.Adam(warm_optimizer_specs)
-# warm-up epoch时的optimizer
+# warm-up epoch时的optimizer，这里可以看到只对add_on_layers上的参数做了optimizer，也就是说更新只会更新optimizer所包含的参数，因为
+# 其他参数不知道如何去更新，因此在warm-up阶段只会更新add_on_layers上的参数，虽然tnt中的warm_only把P的参数和FC层的参数也打开了梯度。
+# 同样的，在joint中虽然FC层的requires_grads也打开了，但由于joint optimizer没有包含这部分的参数，因此也不会更新。
 from settings import last_layer_optimizer_lr
 last_layer_optimizer_specs = [{'params': ppnet.last_layer.parameters(), 'lr': last_layer_optimizer_lr}]
 last_layer_optimizer = torch.optim.Adam(last_layer_optimizer_specs)
@@ -159,11 +161,11 @@ for epoch in range(num_train_epochs):
                       class_specific=class_specific, coefs=coefs, log=log)
     else:
         tnt.joint(model=ppnet_multi, log=log)
-        joint_lr_scheduler.step() # 因为这里才是第一次调用scheduler，所以这才是scheduler计数达到五次lr/10的起点，前面warm-up跑的
-        # epoch不会对joint_optimizer的lr是否要/10产生影响
         _ = tnt.train(model=ppnet_multi, dataloader=train_loader, optimizer=joint_optimizer,
                       class_specific=class_specific, coefs=coefs, log=log)
-
+        joint_lr_scheduler.step() # 因为这里才是第一次调用scheduler，所以这才是scheduler计数达到五次lr/10的起点，前面warm-up跑的
+        # epoch不会对joint_optimizer的lr是否要/10产生影响。Jiabang's change，把train和lr_scheduler.step()互换位置。因为应该要
+        # 先做optimizer.step()再做scheduler.step()，否则第一个学习率会只做4次epoch然后就除以2了
     accu = tnt.test(model=ppnet_multi, dataloader=test_loader,
                     class_specific=class_specific, log=log)
     save.save_model_w_condition(model=ppnet, model_dir=model_dir, model_name=str(epoch) + 'nopush', accu=accu,

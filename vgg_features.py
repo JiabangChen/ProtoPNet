@@ -19,7 +19,7 @@ cfg = {
     'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
     'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
-} # Vgg模型的结构
+} # Vgg模型的结构，但没有涵盖FC层
 
 class VGG_features(nn.Module):
 
@@ -77,7 +77,7 @@ class VGG_features(nn.Module):
                     # 那么在反向传播时由于没有输入的输入的值了，就没法求导，可能会报错 Jiabang's alert 在这里我把nn.ReLU(inplace=True)
                     # 改成了nn.ReLU()
                 else:
-                    layers += [conv2d, nn.ReLU(inplace=True)]
+                    layers += [conv2d, nn.ReLU()] #在这里我把nn.ReLU(inplace=True)改成了nn.ReLU()
 
                 self.n_layers += 1
 

@@ -95,6 +95,8 @@ class PPNet(nn.Module):
                     add_on_layers.append(nn.Sigmoid())
                 current_in_channels = current_in_channels // 2
             self.add_on_layers = nn.Sequential(*add_on_layers)
+            # 对于VGG而言，输出是512，而P的维度实际上是128，详见settings.py,因此add_on_layers的内容为conv（512->256）+relu+
+            # conv(256->256)+relu+conv(256,128)+relu+conv(128,128)+sigmoid()
         else:
             self.add_on_layers = nn.Sequential(
                 nn.Conv2d(in_channels=first_add_on_layer_in_channels, out_channels=self.prototype_shape[1], kernel_size=1),
@@ -324,4 +326,4 @@ def construct_PPNet(base_architecture, pretrained=True, img_size=224,
                  init_weights=True,
                  prototype_activation_function=prototype_activation_function,
                  add_on_layers_type=add_on_layers_type)
-    # 建立prototype模型，包括backbone，让backbone的feature map适配P vector的2个Conv和一个BN，P vector，和FC layer
+    # 建立prototype模型，包括backbone，让backbone的feature map适配P vector的add_on_layer，P vector，和FC layer

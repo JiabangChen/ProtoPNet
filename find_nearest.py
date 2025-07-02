@@ -156,7 +156,7 @@ def find_k_nearest_patches_to_prototypes(dataloader, # pytorch dataloader (must 
                     heapq.heappushpop(heaps[j], closest_patch) # heapq.heappushpop在这里的功能是把closest_patch加入到
                     # heaps[j]这个披着list的外衣的heap中，然后弹出最小值，由于__lt__函数的意思是负distance越小越好，那么也就是说这里最
                     # 小的负distance会被弹出，也就是最大的distance会被弹出
-    # 这个heap最后的功能实现是对每个P找出了k个最小的距离
+    # 这个heap最后的功能实现是对每个P找出了k个最小的距离的train sample 没做过图像增强的
 
     # after looping through the dataset every heap will
     # have the k closest prototypes

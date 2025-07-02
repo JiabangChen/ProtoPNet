@@ -23,6 +23,7 @@ from log import create_logger
 from preprocess import mean, std, preprocess_input_function, undo_preprocess_input_function
 
 import argparse
+###############################Jiabang's alert，如果用prune后的model来做，看下prune_alert:后的注释##################################
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-gpuid', nargs=1, type=str, default='0')
@@ -31,7 +32,7 @@ parser.add_argument('-model', nargs=1, type=str)
 parser.add_argument('-imgdir', nargs=1, type=str)
 parser.add_argument('-img', nargs=1, type=str)
 parser.add_argument('-imgclass', nargs=1, type=int, default=-1)
-args = parser.parse_args()
+args = parser.parse_args() # Jiabang's alert 跑之前要输入这些参数
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpuid[0]
 
@@ -41,6 +42,9 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpuid[0]
 test_image_dir = args.imgdir[0] #'./local_analysis/Painted_Bunting_Class15_0081/'
 test_image_name = args.img[0] #'Painted_Bunting_0081_15230.jpg'
 test_image_label = args.imgclass[0] #15
+print(args.imgdir[0])
+print(args.img[0])
+print(args.imgclass[0])
 
 test_image_path = os.path.join(test_image_dir, test_image_name) # test image来源路径
 
@@ -50,6 +54,7 @@ check_test_accu = False
 # 可视化图表征的信息和P实际的信息可能有差距，因为这时P已经不是刚push完的P了，而是做了优化了 Jiabang's alert
 load_model_dir = args.modeldir[0] #'./saved_models/vgg19/003/'
 load_model_name = args.model[0] #'10_18push0.7822.pth'
+# prune_alert: 如果用prune后的model来做,那么模型dir和name要变，得用prune后的模型
 
 #if load_model_dir[-1] == '/':
 #    model_base_architecture = load_model_dir.split('/')[-3]
@@ -77,12 +82,14 @@ log('load model from ' + load_model_path)
 log('model base architecture: ' + model_base_architecture)
 log('experiment run: ' + experiment_run)
 
-ppnet = torch.load(load_model_path) # 这里就告诉了要如何加载一个训练好了的ppnet
+ppnet = torch.load(load_model_path, weights_only=False) # 这里就告诉了要如何加载一个训练好了的ppnet
+# Jiabang's change, plus weights_only=False can load the model successfully
 ppnet = ppnet.cuda()
 ppnet_multi = torch.nn.DataParallel(ppnet)
 
 img_size = ppnet_multi.module.img_size
 prototype_shape = ppnet.prototype_shape # 这些信息就要save model才可以调取，如果只保存模型的参数字典，就无法调取
+# prune: 如果用prune后的model来做，那么prototype_shape会变，但max_dist不变
 max_dist = prototype_shape[1] * prototype_shape[2] * prototype_shape[3] # 还是算出最大的距离，比如512
 
 class_specific = True
@@ -113,8 +120,10 @@ if check_test_accu:
 ##### SANITY CHECK
 # confirm prototype class identity
 load_img_dir = os.path.join(load_model_dir, 'img')
+#prune_alert: 如果用prune后的模型来做local_analysis的话，存放P的文件夹要变，load_img_dir要变为pruned_prototypes_epoch10_k6_pt3
 # 找到专门存放P的文件夹
 prototype_info = np.load(os.path.join(load_img_dir, 'epoch-'+epoch_number_str, 'bb'+epoch_number_str+'.npy'))
+# prune: 如果用prune后的model来做，这个prototype_info就会变
 # 把在某个epoch做push时的proto_bound_boxes拿出来，是一个2000x6的表格
 prototype_img_identity = prototype_info[:, -1]# 意思是proto_bound_boxes的最后一列，即每个P所属的类别
 
@@ -123,6 +132,7 @@ log('Their class identities are: ' + str(prototype_img_identity))
 
 # confirm prototype connects most strongly to its own class
 prototype_max_connection = torch.argmax(ppnet.last_layer.weight, dim=0)
+# prune: 如果用prune后的model来做，最后的FC层权重也会变
 # 最后一层weight的形状是(200，2000),那么取最大的意思是看这个P所计算出来的相似性分数主要对哪一类有正向作用，它理应对自己所属的类有最大的正向作用
 prototype_max_connection = prototype_max_connection.cpu().numpy()
 if np.sum(prototype_max_connection == prototype_img_identity) == ppnet.num_prototypes:
@@ -196,6 +206,7 @@ logits, min_distances = ppnet_multi(images_test)# 这里的min_distance是所有
 conv_output, distances = ppnet.push_forward(images_test)
 # 一个是这张图输入后由backbone和add_on_layer产生的feature map，形状是（1，512，H，W），一个是这个feature map逐元素与各个P计算距离，形状是
 # （1，2000，H,W）
+# prune: 如果用prune后的model来做，那么min_distances和distances的形状都会变,同理prototype_activations和prototype_activation_patterns的形状也会变
 prototype_activations = ppnet.distance_2_similarity(min_distances)
 prototype_activation_patterns = ppnet.distance_2_similarity(distances)
 # 把feature map与各个P的距离以及最短距离转为相似性分数
@@ -224,6 +235,7 @@ log('Most activated 10 prototypes of this image:')
 array_act, sorted_indices_act = torch.sort(prototype_activations[idx])# 之所以要[idx]是为了把batch维度消除掉
 # 当我算出这个输入图的feature map后，又算出了其对每个P的最小距离，并转化成了相似性分数，然后对相似性分数进行排序，第一个输出参数是排序后的结果
 # 第二个输出参数指的是原始张量中这些值的位置索引，即可得知相似性分数最高的那个P的index。这个排序应该是从小到大，最大的在最后
+# prune: 如果用prune后的model来做 那么上述两个输出都会变
 for i in range(1,11):
     log('top {0} activated prototype for this image:'.format(i))
     save_prototype(os.path.join(save_analysis_path, 'most_activated_prototypes',
@@ -251,10 +263,10 @@ for i in range(1,11):
     if prototype_max_connection[sorted_indices_act[-i].item()] != prototype_img_identity[sorted_indices_act[-i].item()]:
         # 如果拥有最高相似性分数的P所贡献度最高的那个类不等于其自身所属的类
         log('prototype connection identity: {0}'.format(prototype_max_connection[sorted_indices_act[-i].item()]))
-    log('activation value (similarity score): {0}'.format(array_act[-i])) # 最高的十个相似性分数
+    log('activation value (similarity score): {0}'.format(array_act[-i])) # 最高的十个相似性分数 是XAI的一部分
     log('last layer connection with predicted class: {0}'.format(ppnet.last_layer.weight[predicted_cls][sorted_indices_act[-i].item()]))
-    # 这些对feature map具有高相似性的P在FC层对于分类的权重，这个类是预测类别，而非实际类别
-
+    # 这些对feature map具有高相似性的P在FC层对于分类的权重，这个类是预测类别，而非实际类别，也是XAI的一部分
+    # prune: 如果用prune后的model来做,上述保存P的信息就需要从prune时转存的P的文件夹中去取
 
 
     activation_pattern = prototype_activation_patterns[idx][sorted_indices_act[-i].item()].detach().cpu().numpy()
@@ -299,7 +311,7 @@ for i in range(1,11):
     # 上述保存的是P作用在测试图上的信息（activation最高的区域，bounding box圈出来源，和overlay）
     # 上述的P并不一定就属于输入测试图的预测类，他们只是与输入测试图的similarity score最高的那十个
     log('--------------------------------------------------------------')
-
+'''
 ##### PROTOTYPES FROM TOP-k CLASSES
 k = 50
 log('Prototypes from top-%d classes:' % k)
@@ -341,8 +353,9 @@ for i,c in enumerate(topk_classes.detach().cpu().numpy()):
             # 如果这个P贡献最多的那个类不是这个P自身所属的类
             log('prototype connection identity: {0}'.format(prototype_max_connection[prototype_index]))
         log('activation value (similarity score): {0}'.format(prototype_activations[idx][prototype_index]))
-        # 此P与输入feature map的相似性分数
+        # 此P与输入feature map的相似性分数 XAI的组成部分
         log('last layer connection: {0}'.format(ppnet.last_layer.weight[c][prototype_index]))# 这个P对于其所属的类在FC层上贡献值
+        # XAI的组成部分
         # 以上保存的是输入feature map最高的五十个预测logits对应的类的P的信息，是P的信息（P的可视图，可视图的来源，overlay）
         activation_pattern = prototype_activation_patterns[idx][prototype_index].detach().cpu().numpy()
         # 从输入的测试图的feature map对各个P的activation map中找出c类的P对应的那个activation map
@@ -389,7 +402,8 @@ for i,c in enumerate(topk_classes.detach().cpu().numpy()):
         log('--------------------------------------------------------------')
         prototype_cnt += 1
     log('***************************************************************')
-
+'''
+# temporary not use this function Jiabang's change
 if predicted_cls == correct_cls:
     log('Prediction is correct.')
 else:

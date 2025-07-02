@@ -36,11 +36,11 @@ def prune_prototypes(dataloader,
         # if no such element is in Counter, it will return 0
         if nearest_train_patch_class_counts_j[class_j] < prune_threshold:
             prototypes_to_prune.append(j)
-        # 如果与P距离最小的6个patch所属类别有>3个不是P它所属的类别，那么就说这个P该被prune了
+        # 如果与P距离最小的6个patch所属类别有>3个不是P它所属的类别，那么就说这个P该被prune了 这里在做prune
     log('k = {}, prune_threshold = {}'.format(k, prune_threshold))
     log('{} prototypes will be pruned'.format(len(prototypes_to_prune)))
 
-    ### bookkeeping of prototypes to be pruned
+    ### bookkeeping of prototypes to be pruned 记录要被prune掉的P的index和类别
     class_of_prototypes_to_prune = \
         torch.argmax(
             prototype_network_parallel.module.prototype_class_identity[prototypes_to_prune],

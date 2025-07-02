@@ -23,7 +23,8 @@ parser.add_argument('-modeldir', nargs=1, type=str)
 parser.add_argument('-model', nargs=1, type=str)
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpuid[0]
-
+# JIABANG'S alert, 要输入完这些才能跑
+print(args.gpuid[0])
 
 optimize_last_layer = True
 
@@ -36,11 +37,14 @@ prune_threshold = 3
 # 等信息（通过epoch和original_model_dir来加载），因此只有push的epoch才能找出相对应的图像文件夹
 original_model_dir = args.modeldir[0] #'./saved_models/densenet161/003/'
 original_model_name = args.model[0] #'10_16push0.8007.pth'
+print(args.modeldir[0])
+print(args.model[0])
 
 need_push = ('nopush' in original_model_name)
 if need_push:
     assert(False) # pruning must happen after push
-    # 如果model name中是nopush，即joint训练后产生的模型，就报错
+    # 如果model name中是nopush，即joint训练后产生的模型，就报错 因为比如第15 16这些epoch是不做push的，因此不会产生P的可视patch等信息
+    # 也无法通过epoch去文件夹中调取。
 else:
     epoch = original_model_name.split('push')[0]
 
@@ -48,7 +52,7 @@ if '_' in epoch:
     epoch = int(epoch.split('_')[0])
 else:
     epoch = int(epoch)
-# 找出是第几个epoch产生的model
+# 找出是第几个epoch产生的model，可以找push后微调FC layer产生的model
 model_dir = os.path.join(original_model_dir, 'pruned_prototypes_epoch{}_k{}_pt{}'.format(epoch,
                                           k,
                                           prune_threshold)) # 存放prune后的model以及prune又微调后的model
@@ -57,7 +61,8 @@ shutil.copy(src=os.path.join(os.getcwd(), __file__), dst=model_dir) # 将当前 
 
 log, logclose = create_logger(log_filename=os.path.join(model_dir, 'prune.log'))
 
-ppnet = torch.load(original_model_dir + original_model_name) # model加载
+ppnet = torch.load(original_model_dir + original_model_name, weights_only=False) # model加载
+# Jiabang's change, plus weights_only=False can load the model successfully
 ppnet = ppnet.cuda()
 ppnet_multi = torch.nn.DataParallel(ppnet)
 class_specific = True
